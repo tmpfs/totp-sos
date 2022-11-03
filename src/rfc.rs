@@ -115,7 +115,7 @@ impl Rfc6238 {
         })
     }
     #[cfg(not(feature = "otpauth"))]
-    pub fn new(digits: usize, secret: T) -> Result<Rfc6238<T>, Rfc6238Error> {
+    pub fn new(digits: usize, secret: Vec<u8>) -> Result<Rfc6238, Rfc6238Error> {
         assert_digits(&digits)?;
         assert_secret_length(secret.as_ref())?;
 
@@ -142,7 +142,7 @@ impl Rfc6238 {
     }
 
     #[cfg(not(feature = "otpauth"))]
-    pub fn with_defaults(secret: T) -> Result<Rfc6238<T>, Rfc6238Error> {
+    pub fn with_defaults(secret: Vec<u8>) -> Result<Rfc6238, Rfc6238Error> {
         Rfc6238::new(6, secret)
     }
 
@@ -167,11 +167,11 @@ impl Rfc6238 {
 }
 
 #[cfg(not(feature = "otpauth"))]
-impl<T: AsRef<[u8]>> TryFrom<Rfc6238<T>> for TOTP<T> {
+impl TryFrom<Rfc6238> for TOTP {
     type Error = TotpUrlError;
 
     /// Try to create a [TOTP](struct.TOTP.html) from a [Rfc6238](struct.Rfc6238.html) config
-    fn try_from(rfc: Rfc6238<T>) -> Result<Self, Self::Error> {
+    fn try_from(rfc: Rfc6238) -> Result<Self, Self::Error> {
         TOTP::new(rfc.algorithm, rfc.digits, rfc.skew, rfc.step, rfc.secret)
     }
 }

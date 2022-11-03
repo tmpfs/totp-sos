@@ -26,26 +26,6 @@
 //! println!("{}", token);
 //! # }
 //! ```
-//!
-//! ```rust
-//! # #[cfg(feature = "qr")] {
-//! use totp_rs::{Algorithm, TOTP};
-//!
-//! let totp = TOTP::new(
-//!     Algorithm::SHA1,
-//!     6,
-//!     1,
-//!     30,
-//!     "supersecret_topsecret".as_bytes().to_vec(),
-//!     Some("Github".to_string()),
-//!     "constantoine@github.com".to_string(),
-//! ).unwrap();
-//! let url = totp.get_url();
-//! println!("{}", url);
-//! let code = totp.get_qr().unwrap();
-//! println!("{}", code);
-//! # }
-//! ```
 
 mod rfc;
 mod secret;
@@ -61,9 +41,6 @@ use constant_time_eq::constant_time_eq;
 use serde::{Deserialize, Serialize};
 
 use core::fmt;
-
-#[cfg(feature = "qr")]
-use image::Luma;
 
 #[cfg(feature = "otpauth")]
 use url::{Host, Url};
@@ -272,8 +249,8 @@ impl TOTP {
         digits: usize,
         skew: u8,
         step: u64,
-        secret: T,
-    ) -> Result<TOTP<T>, TotpUrlError> {
+        secret: Vec<u8>,
+    ) -> Result<TOTP, TotpUrlError> {
         crate::rfc::assert_digits(&digits)?;
         crate::rfc::assert_secret_length(secret.as_ref())?;
         Ok(TOTP {
@@ -475,84 +452,6 @@ impl TOTP {
             self.digits,
             self.algorithm,
         )
-    }
-
-    #[cfg(feature = "qr")]
-    fn get_qr_draw_canvas(&self, qr: qrcodegen::QrCode) -> image::ImageBuffer<Luma<u8>, Vec<u8>> {
-        let size = qr.size() as u32;
-        // "+ 8 * 8" is here to add padding (the white border around the QRCode)
-        // As some QRCode readers don't work without padding
-        let image_size = size * 8 + 8 * 8;
-        let mut canvas = image::GrayImage::new(image_size, image_size);
-
-        // Draw the border
-        for x in 0..image_size {
-            for y in 0..image_size {
-                if (y < 8 * 4 || y >= image_size - 8 * 4) || (x < 8 * 4 || x >= image_size - 8 * 4)
-                {
-                    canvas.put_pixel(x, y, Luma([255]));
-                }
-            }
-        }
-
-        // The QR inside the white border
-        for x_qr in 0..size {
-            for y_qr in 0..size {
-                // The canvas is a grayscale image without alpha. Hence it's only one 8-bits byte longs
-                // This clever trick to one-line the value was achieved with advanced mathematics
-                // And deep understanding of Boolean algebra.
-                let val = !qr.get_module(x_qr as i32, y_qr as i32) as u8 * 255;
-
-                // Multiply coordinates by width of pixels
-                // And take into account the 8*4 padding on top and left side
-                let x_start = x_qr * 8 + 8 * 4;
-                let y_start = y_qr * 8 + 8 * 4;
-
-                // Draw a 8-pixels-wide square
-                for x_img in x_start..x_start + 8 {
-                    for y_img in y_start..y_start + 8 {
-                        canvas.put_pixel(x_img, y_img, Luma([val]));
-                    }
-                }
-            }
-        }
-        canvas
-    }
-
-    /// Will return a qrcode to automatically add a TOTP as a base64 string. Needs feature `qr` to be enabled!
-    /// Result will be in the form of a string containing a base64-encoded png, which you can embed in HTML without needing
-    /// To store the png as a file.
-    ///
-    /// # Errors
-    ///
-    /// This will return an error in case the URL gets too long to encode into a QR code.
-    /// This would require the get_url method to generate an url bigger than 2000 characters,
-    /// Which would be too long for some browsers anyway.
-    ///
-    /// It will also return an error in case it can't encode the qr into a png. This shouldn't happen unless either the qrcode library returns malformed data, or the image library doesn't encode the data correctly
-    #[cfg(feature = "qr")]
-    pub fn get_qr(&self) -> Result<String, Box<dyn std::error::Error>> {
-        use image::ImageEncoder;
-
-        let url = self.get_url();
-        let mut vec = Vec::new();
-        let qr = qrcodegen::QrCode::encode_text(&url, qrcodegen::QrCodeEcc::Medium)?;
-
-        // "+ 8 * 8" is here to add padding (the white border around the QRCode)
-        // As some QRCode readers don't work without padding
-        let image_size = (qr.size() as u32) * 8 + 8 * 8;
-
-        let canvas = self.get_qr_draw_canvas(qr);
-
-        // Encode the canvas into a PNG
-        let encoder = image::codecs::png::PngEncoder::new(&mut vec);
-        encoder.write_image(
-            &canvas.into_raw(),
-            image_size,
-            image_size,
-            image::ColorType::L8,
-        )?;
-        Ok(base64::encode(vec))
     }
 }
 
@@ -1033,50 +932,5 @@ mod tests {
             totp.unwrap_err(),
             TotpUrlError::IssuerMistmatch(_, _)
         ));
-    }
-
-    #[test]
-    #[cfg(feature = "qr")]
-    fn generates_qr() {
-        use sha2::{Digest, Sha512};
-
-        let totp = TOTP::new(
-            Algorithm::SHA1,
-            6,
-            1,
-            1,
-            "TestSecretSuperSecret".as_bytes().to_vec(),
-            Some("Github".to_string()),
-            "constantoine@github.com".to_string(),
-        )
-        .unwrap();
-        let url = totp.get_url();
-        let qr = qrcodegen::QrCode::encode_text(&url, qrcodegen::QrCodeEcc::Medium)
-            .expect("could not generate qr");
-        let data = totp.get_qr_draw_canvas(qr).into_raw();
-
-        // Create hash from image
-        let hash_digest = Sha512::digest(data);
-        assert_eq!(
-            format!("{:x}", hash_digest).as_str(),
-            "025809c9db9c2c918930e018549c90929a083ee757156737812bad40ded64312c1526c73d8f2f59d5c203b97141ddfc331b1192e234f4f43257f50a6d05e382f"
-        );
-    }
-
-    #[test]
-    #[cfg(feature = "qr")]
-    fn generates_qr_ok() {
-        let totp = TOTP::new(
-            Algorithm::SHA1,
-            6,
-            1,
-            1,
-            "TestSecretSuperSecret".as_bytes().to_vec(),
-            Some("Github".to_string()),
-            "constantoine@github.com".to_string(),
-        )
-        .unwrap();
-        let qr = totp.get_qr();
-        assert!(qr.is_ok());
     }
 }
