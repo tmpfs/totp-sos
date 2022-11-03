@@ -2,7 +2,7 @@ use crate::Algorithm;
 use crate::TotpUrlError;
 use crate::TOTP;
 
-#[cfg(feature = "serde_support")]
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 /// Data is not compliant to [rfc-6238](https://tools.ietf.org/html/rfc6238)
@@ -51,7 +51,7 @@ pub fn assert_secret_length(secret: &[u8]) -> Result<(), Rfc6238Error> {
 ///
 /// # Example
 /// ```
-/// use totp_rs::{Rfc6238, TOTP};
+/// use totp_lite::{Rfc6238, TOTP};
 ///
 /// let mut rfc = Rfc6238::with_defaults(
 ///     "totp-sercret-123".as_bytes().to_vec()
@@ -63,7 +63,7 @@ pub fn assert_secret_length(secret: &[u8]) -> Result<(), Rfc6238Error> {
 /// let totp = TOTP::from_rfc6238(rfc).unwrap();
 /// ```
 #[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde_support", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Rfc6238 {
     /// SHA-1
     algorithm: Algorithm,
@@ -75,12 +75,10 @@ pub struct Rfc6238 {
     step: u64,
     /// As per [rfc-4226](https://tools.ietf.org/html/rfc4226#section-4) the secret should come from a strong source, most likely a CSPRNG. It should be at least 128 bits, but 160 are recommended
     secret: Vec<u8>,
-    #[cfg(feature = "otpauth")]
     /// The "Github" part of "Github:constantoine@github.com". Must not contain a colon `:`
     /// For example, the name of your service/website.
     /// Not mandatory, but strongly recommended!
     issuer: Option<String>,
-    #[cfg(feature = "otpauth")]
     /// The "constantoine@github.com" part of "Github:constantoine@github.com". Must not contain a colon `:`
     /// For example, the name of your user's account.
     account_name: String,
@@ -94,7 +92,6 @@ impl Rfc6238 {
     /// will return a [Rfc6238Error](enum.Rfc6238Error.html) when
     /// - `digits` is lower than 6 or higher than 8
     /// - `secret` is smaller than 128 bits (16 characters)
-    #[cfg(feature = "otpauth")]
     pub fn new(
         digits: usize,
         secret: Vec<u8>,
@@ -114,19 +111,6 @@ impl Rfc6238 {
             account_name,
         })
     }
-    #[cfg(not(feature = "otpauth"))]
-    pub fn new(digits: usize, secret: Vec<u8>) -> Result<Rfc6238, Rfc6238Error> {
-        assert_digits(&digits)?;
-        assert_secret_length(secret.as_ref())?;
-
-        Ok(Rfc6238 {
-            algorithm: Algorithm::SHA1,
-            digits,
-            skew: 1,
-            step: 30,
-            secret,
-        })
-    }
 
     /// Create an [rfc-6238](https://tools.ietf.org/html/rfc6238) compliant set of options that can be turned into a [TOTP](struct.TOTP.html),
     /// with a default value of 6 for `digits`, None `issuer` and an empty account
@@ -136,14 +120,8 @@ impl Rfc6238 {
     /// will return a [Rfc6238Error](enum.Rfc6238Error.html) when
     /// - `digits` is lower than 6 or higher than 8
     /// - `secret` is smaller than 128 bits (16 characters)
-    #[cfg(feature = "otpauth")]
     pub fn with_defaults(secret: Vec<u8>) -> Result<Rfc6238, Rfc6238Error> {
         Rfc6238::new(6, secret, Some("".to_string()), "".to_string())
-    }
-
-    #[cfg(not(feature = "otpauth"))]
-    pub fn with_defaults(secret: Vec<u8>) -> Result<Rfc6238, Rfc6238Error> {
-        Rfc6238::new(6, secret)
     }
 
     /// Set the `digits`
@@ -153,30 +131,17 @@ impl Rfc6238 {
         Ok(())
     }
 
-    #[cfg(feature = "otpauth")]
     /// Set the `issuer`
     pub fn issuer(&mut self, value: String) {
         self.issuer = Some(value);
     }
 
-    #[cfg(feature = "otpauth")]
     /// Set the `account_name`
     pub fn account_name(&mut self, value: String) {
         self.account_name = value;
     }
 }
 
-#[cfg(not(feature = "otpauth"))]
-impl TryFrom<Rfc6238> for TOTP {
-    type Error = TotpUrlError;
-
-    /// Try to create a [TOTP](struct.TOTP.html) from a [Rfc6238](struct.Rfc6238.html) config
-    fn try_from(rfc: Rfc6238) -> Result<Self, Self::Error> {
-        TOTP::new(rfc.algorithm, rfc.digits, rfc.skew, rfc.step, rfc.secret)
-    }
-}
-
-#[cfg(feature = "otpauth")]
 impl TryFrom<Rfc6238> for TOTP {
     type Error = TotpUrlError;
 
@@ -194,6 +159,7 @@ impl TryFrom<Rfc6238> for TOTP {
     }
 }
 
+/*
 #[cfg(test)]
 mod tests {
     #[cfg(feature = "otpauth")]
@@ -362,3 +328,4 @@ mod tests {
         )
     }
 }
+*/

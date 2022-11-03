@@ -1,11 +1,9 @@
-#[cfg(feature = "otpauth")]
 use url::ParseError;
 
-use crate::Rfc6238Error;
+//use crate::Rfc6238Error;
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum TotpUrlError {
-    #[cfg(feature = "otpauth")]
     Url(ParseError),
     Scheme(String),
     Host(String),
@@ -93,7 +91,6 @@ impl std::fmt::Display for TotpUrlError {
                 "Could not parse \"{}\" as a number.",
                 step,
             ),
-            #[cfg(feature = "otpauth")]
             TotpUrlError::Url(e) => write!(
                 f,
                 "Error parsing URL: {}",
@@ -103,14 +100,20 @@ impl std::fmt::Display for TotpUrlError {
     }
 }
 
+/*
 impl From<Rfc6238Error> for TotpUrlError {
     fn from(e: Rfc6238Error) -> Self {
         match e {
-            Rfc6238Error::InvalidDigits(digits) => TotpUrlError::DigitsNumber(digits),
-            Rfc6238Error::SecretTooSmall(bits) => TotpUrlError::SecretSize(bits),
+            Rfc6238Error::InvalidDigits(digits) => {
+                TotpUrlError::DigitsNumber(digits)
+            }
+            Rfc6238Error::SecretTooSmall(bits) => {
+                TotpUrlError::SecretSize(bits)
+            }
         }
     }
 }
+*/
 
 #[cfg(test)]
 mod tests {
@@ -139,7 +142,8 @@ mod tests {
         let error = TotpUrlError::Algorithm("SIKE".to_string());
         assert_eq!(
             error.to_string(),
-            "Algorithm can only be SHA1, SHA256 or SHA512, not \"SIKE\"".to_string()
+            "Algorithm can only be SHA1, SHA256 or SHA512, not \"SIKE\""
+                .to_string()
         )
     }
 
@@ -172,7 +176,8 @@ mod tests {
         let error = TotpUrlError::Issuer("Iss:uer".to_string());
         assert_eq!(
             error.to_string(),
-            "Issuer can't contain a colon. \"Iss:uer\" contains a colon".to_string()
+            "Issuer can't contain a colon. \"Iss:uer\" contains a colon"
+                .to_string()
         )
     }
 
@@ -187,7 +192,10 @@ mod tests {
 
     #[test]
     fn issuer_mismatch() {
-        let error = TotpUrlError::IssuerMistmatch("Google".to_string(), "Github".to_string());
+        let error = TotpUrlError::IssuerMistmatch(
+            "Google".to_string(),
+            "Github".to_string(),
+        );
         assert_eq!(error.to_string(), "An issuer \"Google\" could be retrieved from the path, but a different issuer \"Github\" was found in the issuer URL parameter".to_string())
     }
 
@@ -205,7 +213,8 @@ mod tests {
         let error = TotpUrlError::Secret("YoLo".to_string());
         assert_eq!(
             error.to_string(),
-            "Secret \"YoLo\" is not a valid non-padded base32 string".to_string()
+            "Secret \"YoLo\" is not a valid non-padded base32 string"
+                .to_string()
         )
     }
 

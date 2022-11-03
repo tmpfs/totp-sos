@@ -5,7 +5,7 @@
 //! - Create a TOTP from a "raw" secret
 //! ```
 //! # #[cfg(not(feature = "otpauth"))] {
-//! use totp_rs::{Secret, TOTP, Algorithm};
+//! use totp_lite::{Secret, TOTP, Algorithm};
 //!
 //! let secret = [
 //!     0x70, 0x6c, 0x61, 0x69, 0x6e, 0x2d, 0x73, 0x74, 0x72, 0x69, 0x6e, 0x67, 0x2d, 0x73, 0x65,
@@ -18,62 +18,11 @@
 //!     1,
 //!     30,
 //!     secret_raw.to_bytes().unwrap(),
+//!     "mock@example.com".to_string(),
+//!     Some("Mock issuer".to_string()),
 //! ).unwrap();
 //!
 //! println!("code from raw secret:\t{}", totp_raw.generate_current().unwrap());
-//! # }
-//! ```
-//!
-//! - Create a TOTP from a base32 encoded secret
-//! ```
-//! # #[cfg(not(feature = "otpauth"))] {
-//! use totp_rs::{Secret, TOTP, Algorithm};
-//!
-//! let secret_b32 = Secret::Encoded(String::from("OBWGC2LOFVZXI4TJNZTS243FMNZGK5BNGEZDG"));
-//! let totp_b32 = TOTP::new(
-//!     Algorithm::SHA1,
-//!     6,
-//!     1,
-//!     30,
-//!     secret_b32.to_bytes().unwrap(),
-//! ).unwrap();
-//!
-//! println!("code from base32:\t{}", totp_b32.generate_current().unwrap());
-//! # }
-//!
-//! ```
-//! - Create a TOTP from a Generated Secret
-//! ```
-//! # #[cfg(all(feature = "gen_secret", not(feature = "otpauth")))] {
-//! use totp_rs::{Secret, TOTP, Algorithm};
-//!
-//! let secret_b32 = Secret::default();
-//! let totp_b32 = TOTP::new(
-//!     Algorithm::SHA1,
-//!     6,
-//!     1,
-//!     30,
-//!     secret_b32.to_bytes().unwrap(),
-//! ).unwrap();
-//!
-//! println!("code from base32:\t{}", totp_b32.generate_current().unwrap());
-//! # }
-//! ```
-//! - Create a TOTP from a Generated Secret 2
-//! ```
-//! # #[cfg(all(feature = "gen_secret", not(feature = "otpauth")))] {
-//! use totp_rs::{Secret, TOTP, Algorithm};
-//!
-//! let secret_b32 = Secret::generate_secret();
-//! let totp_b32 = TOTP::new(
-//!     Algorithm::SHA1,
-//!     6,
-//!     1,
-//!     30,
-//!     secret_b32.to_bytes().unwrap(),
-//! ).unwrap();
-//!
-//! println!("code from base32:\t{}", totp_b32.generate_current().unwrap());
 //! # }
 //! ```
 
@@ -100,7 +49,10 @@ impl PartialEq for Secret {
     /// Will check that to_bytes() returns the same
     /// One secret can be Raw, and the other Encoded
     fn eq(&self, other: &Self) -> bool {
-        constant_time_eq(&self.to_bytes().unwrap(), &other.to_bytes().unwrap())
+        constant_time_eq(
+            &self.to_bytes().unwrap(),
+            &other.to_bytes().unwrap(),
+        )
     }
 }
 
@@ -116,10 +68,13 @@ impl Secret {
     pub fn to_bytes(&self) -> Result<Vec<u8>, SecretParseError> {
         match self {
             Secret::Raw(s) => Ok(s.to_vec()),
-            Secret::Encoded(s) => match base32::decode(Alphabet::RFC4648 { padding: false }, s) {
-                Some(bytes) => Ok(bytes),
-                None => Err(SecretParseError::ParseBase32),
-            },
+            Secret::Encoded(s) => {
+                match base32::decode(Alphabet::RFC4648 { padding: false }, s)
+                {
+                    Some(bytes) => Ok(bytes),
+                    None => Err(SecretParseError::ParseBase32),
+                }
+            }
         }
     }
 
@@ -127,19 +82,23 @@ impl Secret {
     pub fn to_raw(&self) -> Result<Self, SecretParseError> {
         match self {
             Secret::Raw(_) => Ok(self.clone()),
-            Secret::Encoded(s) => match base32::decode(Alphabet::RFC4648 { padding: false }, s) {
-                Some(buf) => Ok(Secret::Raw(buf)),
-                None => Err(SecretParseError::ParseBase32),
-            },
+            Secret::Encoded(s) => {
+                match base32::decode(Alphabet::RFC4648 { padding: false }, s)
+                {
+                    Some(buf) => Ok(Secret::Raw(buf)),
+                    None => Err(SecretParseError::ParseBase32),
+                }
+            }
         }
     }
 
     /// Try to transforms a `Secret::Raw` into a `Secret::Encoded`
     pub fn to_encoded(&self) -> Self {
         match self {
-            Secret::Raw(s) => {
-                Secret::Encoded(base32::encode(Alphabet::RFC4648 { padding: false }, s))
-            }
+            Secret::Raw(s) => Secret::Encoded(base32::encode(
+                Alphabet::RFC4648 { padding: false },
+                s,
+            )),
             Secret::Encoded(_) => self.clone(),
         }
     }
@@ -185,10 +144,12 @@ mod tests {
 
     const BASE32: &str = "OBWGC2LOFVZXI4TJNZTS243FMNZGK5BNGEZDG";
     const BYTES: [u8; 23] = [
-        0x70, 0x6c, 0x61, 0x69, 0x6e, 0x2d, 0x73, 0x74, 0x72, 0x69, 0x6e, 0x67, 0x2d, 0x73, 0x65,
-        0x63, 0x72, 0x65, 0x74, 0x2d, 0x31, 0x32, 0x33,
+        0x70, 0x6c, 0x61, 0x69, 0x6e, 0x2d, 0x73, 0x74, 0x72, 0x69, 0x6e,
+        0x67, 0x2d, 0x73, 0x65, 0x63, 0x72, 0x65, 0x74, 0x2d, 0x31, 0x32,
+        0x33,
     ];
-    const BYTES_DISPLAY: &str = "706c61696e2d737472696e672d7365637265742d313233";
+    const BYTES_DISPLAY: &str =
+        "706c61696e2d737472696e672d7365637265742d313233";
 
     #[test]
     fn secret_display() {
@@ -228,8 +189,10 @@ mod tests {
 
     #[test]
     fn secret_from_string() {
-        let raw: Secret = Secret::Raw("TestSecretSuperSecret".as_bytes().to_vec());
-        let encoded: Secret = Secret::Encoded("KRSXG5CTMVRXEZLUKN2XAZLSKNSWG4TFOQ".to_string());
+        let raw: Secret =
+            Secret::Raw("TestSecretSuperSecret".as_bytes().to_vec());
+        let encoded: Secret =
+            Secret::Encoded("KRSXG5CTMVRXEZLUKN2XAZLSKNSWG4TFOQ".to_string());
         assert_eq!(raw.to_encoded(), encoded);
         assert_eq!(raw, encoded.to_raw().unwrap());
     }
@@ -256,7 +219,9 @@ mod tests {
     #[cfg(feature = "gen_secret")]
     fn secret_empty() {
         let non_ascii = vec![240, 159, 146, 150];
-        let sec = Secret::Encoded(std::str::from_utf8(&non_ascii).unwrap().to_owned());
+        let sec = Secret::Encoded(
+            std::str::from_utf8(&non_ascii).unwrap().to_owned(),
+        );
 
         let to_r = sec.to_raw();
 
