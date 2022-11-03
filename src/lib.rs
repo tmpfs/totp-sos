@@ -9,8 +9,7 @@
 //! # Examples
 //!
 //! ```rust
-//! use std::time::SystemTime;
-//! use totp_lite::{Algorithm, TOTP, Secret};
+//! use totp_lite::{Algorithm, TOTP};
 //!
 //! let totp = TOTP::new(
 //!     Algorithm::SHA1,
@@ -25,13 +24,12 @@
 //! println!("{}", token);
 //! ```
 
-//mod rfc;
-mod secret;
-mod url_error;
+mod error;
 
-//pub use rfc::{Rfc6238, Rfc6238Error};
-pub use secret::{Secret, SecretParseError};
-pub use url_error::TotpUrlError;
+pub use error::Error;
+
+/// Result type for the TOTP library.
+pub type Result<T> = std::result::Result<T, Error>;
 
 use constant_time_eq::constant_time_eq;
 
@@ -43,7 +41,7 @@ use core::fmt;
 use url::{Host, Url};
 
 use hmac::Mac;
-use std::time::{SystemTime, SystemTimeError, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 type HmacSha1 = hmac::Hmac<sha1::Sha1>;
 type HmacSha256 = hmac::Hmac<sha2::Sha256>;
@@ -100,7 +98,7 @@ impl Algorithm {
     }
 }
 
-fn system_time() -> Result<u64, SystemTimeError> {
+fn system_time() -> Result<u64> {
     let t = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
     Ok(t)
 }
@@ -158,14 +156,6 @@ impl PartialEq for TOTP {
 impl TOTP {
     /// Will create a new instance of TOTP with given parameters. See [the doc](struct.TOTP.html#fields) for reference as to how to choose those values
     ///
-    /// # Description
-    /// * `secret`: expect a non-encoded value, to pass in base32 string use `Secret::Encoded(String)`
-    ///
-    /// ```rust
-    /// use totp_lite::{Secret, TOTP, Algorithm};
-    /// let secret = Secret::Encoded("OBWGC2LOFVZXI4TJNZTS243FMNZGK5BNGEZDG".to_string());
-    /// let totp = TOTP::new(Algorithm::SHA1, 6, 1, 30, secret.to_bytes().unwrap(), "".to_string(), None).unwrap();
-    /// ```
     /// * `digits`: MUST be between 6 & 8
     /// * `secret`: Must have bitsize of at least 128
     /// * `account_name`: Must not contain `:`
@@ -182,17 +172,27 @@ impl TOTP {
         secret: Vec<u8>,
         account_name: String,
         issuer: Option<String>,
-    ) -> Result<TOTP, TotpUrlError> {
-        //crate::rfc::assert_digits(&digits)?;
-        //crate::rfc::assert_secret_length(secret.as_ref())?;
-        if issuer.is_some() && issuer.as_ref().unwrap().contains(':') {
-            return Err(TotpUrlError::Issuer(
-                issuer.as_ref().unwrap().to_string(),
-            ));
+    ) -> Result<TOTP> {
+        if !(6..=8).contains(&digits) {
+            return Err(Error::InvalidDigits(digits));
         }
+
+        if secret.len() < 16 {
+            return Err(Error::SecretTooSmall(secret.len() * 8));
+        }
+
         if account_name.contains(':') {
-            return Err(TotpUrlError::AccountName(account_name));
+            return Err(Error::AccountName(account_name));
         }
+
+        if let Some(issuer) = &issuer {
+            if issuer.contains(':') {
+                return Err(Error::Issuer(
+                    issuer.to_string(),
+                ));
+            }
+        }
+
         Ok(TOTP {
             algorithm,
             digits,
@@ -204,7 +204,7 @@ impl TOTP {
         })
     }
 
-    /// Will sign the given timestamp
+    /// Sign the given timestamp
     pub fn sign(&self, time: u64) -> Vec<u8> {
         self.algorithm.sign(
             self.secret.as_ref(),
@@ -230,30 +230,29 @@ impl TOTP {
     /// given the provided timestamp in seconds
     pub fn next_step(&self, time: u64) -> u64 {
         let step = time / self.step;
-
         (step + 1) * self.step
     }
 
     /// Returns the timestamp of the first second of the next step
     /// According to system time
-    pub fn next_step_current(&self) -> Result<u64, SystemTimeError> {
+    pub fn next_step_current(&self) -> Result<u64> {
         let t = system_time()?;
         Ok(self.next_step(t))
     }
 
     /// Give the ttl (in seconds) of the current token
-    pub fn ttl(&self) -> Result<u64, SystemTimeError> {
+    pub fn ttl(&self) -> Result<u64> {
         let t = system_time()?;
         Ok(self.step - (t % self.step))
     }
 
     /// Generate a token from the current system time
-    pub fn generate_current(&self) -> Result<String, SystemTimeError> {
+    pub fn generate_current(&self) -> Result<String> {
         let t = system_time()?;
         Ok(self.generate(t))
     }
 
-    /// Will check if token is valid given the provided timestamp in seconds, accounting [skew](struct.TOTP.html#structfield.skew)
+    /// Check if token is valid given the provided timestamp in seconds, accounting [skew](struct.TOTP.html#structfield.skew)
     pub fn check(&self, token: &str, time: u64) -> bool {
         let basestep = time / self.step - (self.skew as u64);
         for i in 0..self.skew * 2 + 1 {
@@ -269,31 +268,52 @@ impl TOTP {
         false
     }
 
-    /// Will check if token is valid by current system time, accounting [skew](struct.TOTP.html#structfield.skew)
+    /// Check if token is valid by current system time, accounting [skew](struct.TOTP.html#structfield.skew)
     pub fn check_current(
         &self,
         token: &str,
-    ) -> Result<bool, SystemTimeError> {
+    ) -> Result<bool> {
         let t = system_time()?;
         Ok(self.check(token, t))
     }
 
-    /// Will return the base32 representation of the secret, which might be useful when users want to manually add the secret to their authenticator
-    pub fn get_secret_base32(&self) -> String {
+    /// Return the base32 representation of the secret, which might be useful when users want to manually add the secret to their authenticator
+    pub fn to_secret_base32(&self) -> String {
         base32::encode(
             base32::Alphabet::RFC4648 { padding: false },
             self.secret.as_ref(),
         )
     }
 
+    /// Convert a base32 secret into a TOTP.
+    ///
+    /// The account name is the empty string and the issuer is None; so you 
+    /// should set them explicitly after decoding the secret bytes.
+    pub fn from_secret_base32<S: AsRef<str>>(secret: S) -> Result<TOTP> {
+        let buffer = base32::decode(
+            base32::Alphabet::RFC4648 { padding: false },
+            secret.as_ref(),
+        ).ok_or(Error::Secret(secret.as_ref().to_string()))?;
+
+        TOTP::new(
+            Algorithm::SHA1,
+            6,
+            1,
+            30,
+            buffer,
+            String::new(),
+            None,
+        )
+    }
+
     /// Generate a TOTP from the standard otpauth URL
-    pub fn from_url<S: AsRef<str>>(url: S) -> Result<TOTP, TotpUrlError> {
-        let url = Url::parse(url.as_ref()).map_err(TotpUrlError::Url)?;
+    pub fn from_url<S: AsRef<str>>(url: S) -> Result<TOTP> {
+        let url = Url::parse(url.as_ref())?;
         if url.scheme() != "otpauth" {
-            return Err(TotpUrlError::Scheme(url.scheme().to_string()));
+            return Err(Error::Scheme(url.scheme().to_string()));
         }
         if url.host() != Some(Host::Domain("totp")) {
-            return Err(TotpUrlError::Host(url.host().unwrap().to_string()));
+            return Err(Error::Host(url.host().unwrap().to_string()));
         }
 
         let mut algorithm = Algorithm::SHA1;
@@ -309,7 +329,7 @@ impl TOTP {
             issuer = Some(
                 urlencoding::decode(parts.0.to_owned().as_str())
                     .map_err(|_| {
-                        TotpUrlError::IssuerDecoding(parts.0.to_owned())
+                        Error::IssuerDecoding(parts.0.to_owned())
                     })?
                     .to_string(),
             );
@@ -319,7 +339,7 @@ impl TOTP {
         }
 
         account_name = urlencoding::decode(account_name.as_str())
-            .map_err(|_| TotpUrlError::AccountName(account_name.to_string()))?
+            .map_err(|_| Error::AccountName(account_name.to_string()))?
             .to_string();
 
         for (key, value) in url.query_pairs() {
@@ -330,7 +350,7 @@ impl TOTP {
                         "SHA256" => Algorithm::SHA256,
                         "SHA512" => Algorithm::SHA512,
                         _ => {
-                            return Err(TotpUrlError::Algorithm(
+                            return Err(Error::Algorithm(
                                 value.to_string(),
                             ))
                         }
@@ -338,30 +358,30 @@ impl TOTP {
                 }
                 "digits" => {
                     digits = value.parse::<usize>().map_err(|_| {
-                        TotpUrlError::Digits(value.to_string())
+                        Error::Digits(value.to_string())
                     })?;
                 }
                 "period" => {
                     step = value
                         .parse::<u64>()
-                        .map_err(|_| TotpUrlError::Step(value.to_string()))?;
+                        .map_err(|_| Error::Step(value.to_string()))?;
                 }
                 "secret" => {
                     secret = base32::decode(
                         base32::Alphabet::RFC4648 { padding: false },
                         value.as_ref(),
                     )
-                    .ok_or_else(|| TotpUrlError::Secret(value.to_string()))?;
+                    .ok_or_else(|| Error::Secret(value.to_string()))?;
                 }
                 "issuer" => {
                     let param_issuer =
                         value.parse::<String>().map_err(|_| {
-                            TotpUrlError::Issuer(value.to_string())
+                            Error::Issuer(value.to_string())
                         })?;
                     if issuer.is_some()
                         && param_issuer.as_str() != issuer.as_ref().unwrap()
                     {
-                        return Err(TotpUrlError::IssuerMistmatch(
+                        return Err(Error::IssuerMismatch(
                             issuer.as_ref().unwrap().to_string(),
                             param_issuer,
                         ));
@@ -373,7 +393,7 @@ impl TOTP {
         }
 
         if secret.is_empty() {
-            return Err(TotpUrlError::Secret("".to_string()));
+            return Err(Error::Secret("".to_string()));
         }
 
         TOTP::new(algorithm, digits, 1, step, secret, account_name, issuer)
@@ -397,7 +417,7 @@ impl TOTP {
         format!(
             "otpauth://totp/{}secret={}&digits={}&algorithm={}",
             label,
-            self.get_secret_base32(),
+            self.to_secret_base32(),
             self.digits,
             self.algorithm,
         )
@@ -433,7 +453,7 @@ mod tests {
             Some("Github:".to_string()),
         );
         assert!(totp.is_err());
-        assert!(matches!(totp.unwrap_err(), TotpUrlError::Issuer(_)));
+        assert!(matches!(totp.unwrap_err(), Error::Issuer(_)));
     }
 
     #[test]
@@ -448,7 +468,7 @@ mod tests {
             Some("Github".to_string()),
         );
         assert!(totp.is_err());
-        assert!(matches!(totp.unwrap_err(), TotpUrlError::AccountName(_)));
+        assert!(matches!(totp.unwrap_err(), Error::AccountName(_)));
     }
 
     #[test]
@@ -463,7 +483,7 @@ mod tests {
             None,
         );
         assert!(totp.is_err());
-        assert!(matches!(totp.unwrap_err(), TotpUrlError::AccountName(_)));
+        assert!(matches!(totp.unwrap_err(), Error::AccountName(_)));
     }
 
     #[test]
@@ -583,7 +603,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            totp.get_secret_base32().as_str(),
+            totp.to_secret_base32().as_str(),
             "KRSXG5CTMVRXEZLUKN2XAZLSKNSWG4TFOQ"
         );
     }
@@ -853,7 +873,7 @@ mod tests {
         let totp = TOTP::from_url("http://totp/GitHub:test?issuer=GitHub&secret=KRSXG5CTMVRXEZLUKN2XAZLSKNSWG4TFOQ&digits=8&period=60&algorithm=SHA256");
         assert!(totp.is_err());
         let err = totp.unwrap_err();
-        assert!(matches!(err, TotpUrlError::Scheme(_)));
+        assert!(matches!(err, Error::Scheme(_)));
     }
 
     #[test]
@@ -861,7 +881,7 @@ mod tests {
         let totp = TOTP::from_url("otpauth://totp/GitHub:test?issuer=GitHub&secret=KRSXG5CTMVRXEZLUKN2XAZLSKNSWG4TFOQ&digits=8&period=60&algorithm=MD5");
         assert!(totp.is_err());
         let err = totp.unwrap_err();
-        assert!(matches!(err, TotpUrlError::Algorithm(_)));
+        assert!(matches!(err, Error::Algorithm(_)));
     }
 
     #[test]
@@ -870,7 +890,7 @@ mod tests {
         assert!(totp.is_err());
         assert!(matches!(
             totp.unwrap_err(),
-            TotpUrlError::IssuerMistmatch(_, _)
+            Error::IssuerMismatch(_, _)
         ));
     }
 }
