@@ -1,4 +1,4 @@
-use totp_lite::{Algorithm, TOTP};
+use totp_sos::{Algorithm, TOTP};
 
 fn main() {
     let totp = TOTP::new(
@@ -6,8 +6,8 @@ fn main() {
         6,
         1,
         30,
-        "my-secret".as_bytes().to_vec(),
-        "constantoine@github.com".to_string(),
+        "ThisIsAnExampleSecretWithEnoughBytes".as_bytes().to_vec(),
+        "mock@example.com".to_string(),
         Some("Github".to_string()),
     )
     .unwrap();

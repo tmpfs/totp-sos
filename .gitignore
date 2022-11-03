@@ -1,6 +1,3 @@
-.idea
 /target
 Cargo.lock
-.vscode/settings.json
-cobertura.xml
 *.bak

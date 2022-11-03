@@ -1,5 +1,5 @@
 [package]
-name = "totp-lite"
+name = "totp-sos"
 version = "3.1.0"
 authors = ["Muji <muji@tmpfs.org>", "Cleo Rebert <cleo.rebert@gmail.com>"]
 edition = "2021"
@@ -12,7 +12,7 @@ keywords = ["authentication", "2fa", "totp", "hmac", "otp"]
 categories = ["authentication", "web-programming"]
 
 [package.metadata.docs.rs]
-features = [ "serde", "zeroize" ]
+features = ["serde", "zeroize"]
 
 [features]
 default = ["zeroize"]
