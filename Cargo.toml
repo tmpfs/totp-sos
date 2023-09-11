@@ -1,6 +1,6 @@
 [package]
 name = "totp-sos"
-version = "3.1.0"
+version = "3.1.1"
 authors = ["Muji <muji@tmpfs.org>", "Cleo Rebert <cleo.rebert@gmail.com>"]
 edition = "2021"
 readme = "README.md"

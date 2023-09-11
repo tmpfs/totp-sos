@@ -1,33 +1,13 @@
 #![deny(missing_docs)]
 #![forbid(unsafe_code)]
 
-//! This library permits the creation of 2FA authentification tokens per TOTP, the verification of said tokens, with configurable time skew, validity time of each token, algorithm and number of digits! Default features are kept as low-dependency as possible to ensure small binaries and short compilation time
-//!
-//! Be aware that some authenticator apps will accept the `SHA256`
-//! and `SHA512` algorithms but silently fallback to `SHA1` which will
-//! make the `check()` function fail due to mismatched algorithms.
-//!
-//! Use the `SHA1` algorithm to avoid this problem.
-//!
-//! # Examples
-//!
-//! ```rust
-//! use totp_sos::{Algorithm, TOTP};
-//!
-//! let totp = TOTP::new(
-//!     Algorithm::SHA1,
-//!     6,
-//!     1,
-//!     30,
-//!     "TestSecretSuperSecret".as_bytes().to_vec(),
-//!     "mock@example.com".to_string(),
-//!     Some("Github".to_string()),
-//! ).unwrap();
-//! let token = totp.generate_current().unwrap();
-//! println!("{}", token);
-//! ```
+//! This library was a fork of `totp-rs` that is no longer maintained, instead all the features 
+//! we needed have been merged into `totp-rs` so use that crate instead.
 
 mod error;
+
+#[cfg(feature = "qr")]
+pub mod qr;
 
 pub use error::Error;
 
